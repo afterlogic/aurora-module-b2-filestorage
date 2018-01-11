@@ -1,18 +1,30 @@
 {
-	"Disabled": [
-		false,
-		"bool"
-	],
-    "EnableUploadSizeLimit": [
-        true,
-        "bool"
-    ],
-    "UploadSizeLimitMb": [
-        100,
-        "int"
-    ],
-    "UserSpaceLimitMb": [
-        100,
-        "int"
-    ]
+  "Disabled": [
+    false,
+    "bool"
+  ],
+  "EnableUploadSizeLimit": [
+    true,
+    "bool"
+  ],
+  "UploadSizeLimitMb": [
+    100,
+    "int"
+  ],
+  "UserSpaceLimitMb": [
+    100,
+    "int"
+  ],
+  "B2BucketName": [
+    "foldercrate-test",
+    "string"
+  ],
+  "B2AccountId": [
+    "f2dc53c2faa7",
+    "string"
+  ],
+  "B2AppKey": [
+    "0017d294fad8cd5427130c19c040c953518e7d2ec4",
+    "string"
+  ]
 }

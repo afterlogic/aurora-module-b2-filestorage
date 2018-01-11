@@ -10,6 +10,10 @@
 
 namespace Aurora\Modules\B2Filestorage;
 
+use Aurora\Modules\Files\Classes\FileItem;
+use ChrisWhite\B2\Client;
+use ChrisWhite\B2\File;
+
 /**
  * @package Modules
  */
@@ -29,6 +33,13 @@ class Module extends \Aurora\System\Module\AbstractModule
 	 */
 	protected $oMinModuleDecorator = null;
 
+    /**
+     * @var Client
+     */
+	protected $b2 = null;
+
+	protected $b2BucketName = '';
+
 	/***** private functions *****/
 	/**
 	 * Initializes Files Module.
@@ -39,6 +50,8 @@ class Module extends \Aurora\System\Module\AbstractModule
 	{
 		ini_set( 'default_charset', 'UTF-8' ); //support for cyrillic characters in file names
 		$this->oApiFilesManager = new \Aurora\Modules\Files\Manager($this);
+		$this->b2BucketName = $this->getConfig('B2BucketName');
+		$this->b2 = new Client($this->getConfig('B2AccountId'), $this->getConfig('B2AppKey'));
 		
 		$this->subscribeEvent('Files::GetFile', array($this, 'onGetFile'));
 		$this->subscribeEvent('Files::CreateFile', array($this, 'onCreateFile'));
@@ -52,6 +65,7 @@ class Module extends \Aurora\System\Module\AbstractModule
 		$this->subscribeEvent('Files::Copy::after', array($this, 'onAfterCopy'));
 		$this->subscribeEvent('Files::Move::after', array($this, 'onAfterMove'));
 		$this->subscribeEvent('Files::Rename::after', array($this, 'onAfterRename'));
+        $this->subscribeEvent('Files::Delete::before', array($this, 'onBeforeDelete'));
 		$this->subscribeEvent('Files::Delete::after', array($this, 'onAfterDelete'));
 		$this->subscribeEvent('Files::GetQuota::after', array($this, 'onAfterGetQuota'));
 		$this->subscribeEvent('Files::GetPublicFiles::after', array($this, 'onAfterGetPublicFiles'));
@@ -104,8 +118,33 @@ class Module extends \Aurora\System\Module\AbstractModule
 			$sUUID = \Aurora\System\Api::getUserUUIDById($aArgs['UserId']);
 			$iOffset = isset($aArgs['Offset']) ? $aArgs['Offset'] : 0;
 			$iChunkSizet = isset($aArgs['ChunkSize']) ? $aArgs['ChunkSize'] : 0;
-			$Result = $this->oApiFilesManager->getFile($sUUID, $aArgs['Type'], $aArgs['Path'], $aArgs['Id'], $iOffset, $iChunkSizet);
-			
+			//Read metadata from local FS
+			$metaFile = $this->oApiFilesManager->getFile($sUUID, $aArgs['Type'], $aArgs['Path'], $aArgs['Id'], $iOffset, $iChunkSizet);
+
+			try {
+                if (is_resource($metaFile))
+                {
+                    //Parse metadata
+                    $metadata = json_decode(stream_get_contents($metaFile), JSON_OBJECT_AS_ARRAY);
+
+                    //Prepare temporary file on local FS
+                    $tempFileName = '/tmp/' . $aArgs['Id'];
+
+                    if (!empty($metadata['id'])) {
+                        //Download original file content to temp file
+                        $this->b2->download([
+                            'FileId' => $metadata['id'],
+                            'SaveAs' => $tempFileName
+                        ]);
+                    }
+
+                    //Return file
+                    $Result = fopen($tempFileName, 'r');
+                }
+            } catch (\Exception $e) {
+                throw new \Exception('Cloud storage error');
+            }
+
 			return true;
 		}
 	}	
@@ -126,12 +165,35 @@ class Module extends \Aurora\System\Module\AbstractModule
 	{
 		if ($this->checkStorageType($aArgs['Type']))
 		{
+
+		    $userUUID = \Aurora\System\Api::getUserUUIDById(isset($aArgs['UserId']) ? $aArgs['UserId'] : null);
+
+		    try {
+                $b2FileName = self::b2Filename($userUUID, $aArgs['Path'], $aArgs['Name']);
+
+                /* @var $b2File File */
+                $b2File = $this->b2->upload([
+                    'FileName' => $b2FileName,
+                    'BucketName' => $this->b2BucketName,
+                    'Body' => $aArgs['Data']
+                ]);
+
+
+                $metadata = json_encode([
+                    'id' => $b2File->getId(),
+                    'size' => $b2File->getSize()
+                ]);
+            } catch (\Exception $e) {
+                throw new \Exception('Cloud storage error');
+            }
+
+
 			$Result = $this->oApiFilesManager->createFile(
-				\Aurora\System\Api::getUserUUIDById(isset($aArgs['UserId']) ? $aArgs['UserId'] : null),
+				$userUUID,
 				isset($aArgs['Type']) ? $aArgs['Type'] : null,
 				isset($aArgs['Path']) ? $aArgs['Path'] : null,
 				isset($aArgs['Name']) ? $aArgs['Name'] : null,
-				isset($aArgs['Data']) ? $aArgs['Data'] : null,
+				$metadata,
 				isset($aArgs['Overwrite']) ? $aArgs['Overwrite'] : null,
 				isset($aArgs['RangeType']) ? $aArgs['RangeType'] : null,
 				isset($aArgs['Offset']) ? $aArgs['Offset'] : null,
@@ -141,7 +203,15 @@ class Module extends \Aurora\System\Module\AbstractModule
 			return true;
 		}
 	}
-	
+
+	public static function b2Filename($userUUID, $path, $name)
+    {
+        $b2FileName =  $userUUID  . DIRECTORY_SEPARATOR . md5($path . DIRECTORY_SEPARATOR . $name);
+
+        return urlencode($b2FileName);
+    }
+
+
 	/**
 	 * @ignore
 	 * @param string $Link
@@ -285,6 +355,25 @@ class Module extends \Aurora\System\Module\AbstractModule
 		{
 			$sUUID = \Aurora\System\Api::getUserUUIDById($aArgs['UserId']);
 			$aFiles = $this->oApiFilesManager->getFiles($sUUID, $aArgs['Type'], $aArgs['Path'], $aArgs['Pattern']);
+
+			foreach($aFiles as &$fileInfo) {
+                /* @var $fileInfo FileItem */
+                if (!$fileInfo->IsFolder) {
+                    //Read metadata from local FS
+                    $metaFile = $this->oApiFilesManager->getFile($sUUID, $aArgs['Type'], $aArgs['Path'], $fileInfo->Name);
+
+                    if (is_resource($metaFile)) {
+                        //Parse metadata
+                        $metadata = json_decode(stream_get_contents($metaFile), JSON_OBJECT_AS_ARRAY);
+
+                        if (!empty($metadata['size'])) {
+
+                            //Override file size
+                            $fileInfo->Size = $metadata['size'];
+                        }
+                    }
+                }
+            }
 
 			$mResult = array(
 				'Items' => $aFiles,
@@ -650,6 +739,74 @@ class Module extends \Aurora\System\Module\AbstractModule
 		}
 	}
 
+    /**
+     * Removes file at B2 side before metafile is deleted from local FS
+     *
+     * @param $aArgs
+     * @param $mResult
+     * @return bool
+     */
+    public function onBeforeDelete(&$aArgs, &$mResult)
+    {
+        $sUUID = \Aurora\System\Api::getUserUUIDById($aArgs['UserId']);
+        if ($this->checkStorageType($aArgs['Type']))
+        {
+            $mResult = false;
+
+            foreach ($aArgs['Items'] as $oItem)
+            {
+                if (!empty($oItem['Name']))
+                {
+                    /* @var $fileInfo FileItem */
+                    $fileInfo = $this->oApiFilesManager->getFileInfo($sUUID, $aArgs['Type'], $oItem['Path'], $oItem['Name']);
+
+                    if ($fileInfo->IsFolder) {
+                        $directory = $this->oApiFilesManager->oStorage->getDirectory($sUUID, $aArgs['Type'], $fileInfo->FullPath);
+                        $files = $directory->getFileListRecursive();
+                        try {
+                            foreach($files as $file) {
+                                /* @var $file \SplFileInfo */
+                                $metadata = json_decode(file_get_contents($file->getRealPath()), JSON_OBJECT_AS_ARRAY);
+
+                                if (!empty($metadata['id'])) {
+
+                                    $this->b2->deleteFile([
+                                        'BucketName' => $this->b2BucketName,
+                                        'FileId' => $metadata['id']
+                                    ]);
+                                }
+                            }
+                        } catch (\Exception $e) {
+                            throw new \Exception('Cloud storage error');
+                        }
+
+                    } else {
+                        //Read metadata from local FS
+                        $metaFile = $this->oApiFilesManager->getFile($sUUID, $aArgs['Type'], $oItem['Path'], $oItem['Name']);
+
+                        try {
+                            if (is_resource($metaFile))
+                            {
+                                //Parse metadata
+                                $metadata = json_decode(stream_get_contents($metaFile), JSON_OBJECT_AS_ARRAY);
+
+                                if (!empty($metadata['id'])) {
+                                    $this->b2->deleteFile([
+                                        'BucketName' => $this->b2BucketName,
+                                        'FileId' => $metadata['id']
+                                    ]);
+                                }
+                            }
+                        } catch (\Exception $e) {
+                            throw new \Exception('Cloud storage error');
+                        }
+                    }
+                }
+            }
+            return true;
+        }
+    }
+
 	/**
 	 * @api {post} ?/Api/ Rename
 	 * @apiDescription Renames folder, file or link.
@@ -770,37 +927,148 @@ class Module extends \Aurora\System\Module\AbstractModule
 	 *	}]
 	 * }
 	 */
-	
-	public function onAfterCopy(&$aArgs, &$mResult)
-	{
-		$sUUID = \Aurora\System\Api::getUserUUIDById($aArgs['UserId']);
+    public function onAfterCopy(&$aArgs, &$mResult)
+    {
+        $sUUID = \Aurora\System\Api::getUserUUIDById($aArgs['UserId']);
 
-		if ($this->checkStorageType($aArgs['FromType']))
-		{
-			foreach ($aArgs['Files'] as $aItem)
-			{
-				$bFolderIntoItself = $aItem['IsFolder'] && $aArgs['ToPath'] === $aItem['FromPath'].'/'.$aItem['Name'];
-				if (!$bFolderIntoItself)
-				{
-					$mResult = $this->oApiFilesManager->copy(
-						$sUUID, 
-						$aItem['FromType'], 
-						$aArgs['ToType'], 
-						$aItem['FromPath'], 
-						$aArgs['ToPath'], 
-						$aItem['Name'], 
-						$this->oApiFilesManager->getNonExistentFileName(
-							$sUUID, 
-							$aArgs['ToType'], 
-							$aArgs['ToPath'], 
-							$aItem['Name']
-						)
-					);
-				}
-			}
-			return true;
-		}
-	}
+        if ($this->checkStorageType($aArgs['FromType']))
+        {
+            foreach ($aArgs['Files'] as $aItem)
+            {
+                $bFolderIntoItself = $aItem['IsFolder'] && $aArgs['ToPath'] === $aItem['FromPath'].'/'.$aItem['Name'];
+                if (!$bFolderIntoItself)
+                {
+
+                    if ($aItem['IsFolder']) {
+                        //Copy meta files on local FS
+                        $mResult = $this->oApiFilesManager->copy(
+                            $sUUID,
+                            $aItem['FromType'],
+                            $aArgs['ToType'],
+                            $aItem['FromPath'],
+                            $aArgs['ToPath'],
+                            $aItem['Name'],
+                            $this->oApiFilesManager->getNonExistentFileName(
+                                $sUUID,
+                                $aArgs['ToType'],
+                                $aArgs['ToPath'],
+                                $aItem['Name']
+                            )
+                        );
+
+                        try {
+                            //Create duplicates at B2
+                            $directory = $this->oApiFilesManager->oStorage->getDirectory($sUUID, $aItem['FromType'], $aArgs['ToPath'] . DIRECTORY_SEPARATOR . $aItem['Name']);
+                            $copiedFiles = $directory->getFileListRecursive();
+
+                            foreach ($copiedFiles as $copiedFile) {
+                                /* @var $copiedFile \SplFileInfo */
+                                $metadata = json_decode(file_get_contents($copiedFile->getRealPath()), JSON_OBJECT_AS_ARRAY);
+
+                                $tempFileName = tempnam('/tmp', uniqid('copy_') . md5($sUUID . $copiedFile->getFilename()));
+                                if (!empty($metadata['id'])) {
+
+                                    //Download original file content to temp file
+                                    if ($this->b2->download([
+                                        'FileId' => $metadata['id'],
+                                        'SaveAs' => $tempFileName
+                                    ])) {
+
+                                        $fileNewName = $this->oApiFilesManager->getNonExistentFileName(
+                                            $sUUID,
+                                            $aArgs['ToType'],
+                                            $aArgs['ToPath'],
+                                            $copiedFile->getFilename()
+                                        );
+
+                                        $b2FileName = self::b2Filename($sUUID, $aArgs['ToPath'] . DIRECTORY_SEPARATOR . $aItem['Name'], $fileNewName);
+
+                                        /* @var $b2File File */
+                                        $b2File = $this->b2->upload([
+                                            'FileName' => $b2FileName,
+                                            'BucketName' => $this->b2BucketName,
+                                            'Body' => fopen($tempFileName, 'r')
+                                        ]);
+                                        unset($tempFileName);
+
+
+                                        $metadata = json_encode([
+                                            'id' => $b2File->getId(),
+                                            'size' => $b2File->getSize()
+                                        ]);
+
+                                        file_put_contents($copiedFile->getRealPath(), $metadata);
+                                    }
+                                }
+                            }
+                        } catch (\Exception $e) {
+                            throw new \Exception('Cloud storage error');
+                        }
+
+                    } else {
+                        //Read metadata from local FS
+                        $metaFile = $this->oApiFilesManager->getFile($sUUID, $aArgs['FromType'], $aItem['FromPath'], $aItem['Name']);
+
+                        try {
+                            if (is_resource($metaFile))
+                            {
+                                //Parse metadata
+                                $metadata = json_decode(stream_get_contents($metaFile), JSON_OBJECT_AS_ARRAY);
+
+                                //Prepare temporary file on local FS
+                                $tempFileName = tempnam('/tmp', 'copy_' . md5($sUUID . $aItem['FromPath'] . $aItem['Name']));
+
+                                if (!empty($metadata['id'])) {
+
+                                    //Download original file content to temp file
+                                    if ($this->b2->download([
+                                        'FileId' => $metadata['id'],
+                                        'SaveAs' => $tempFileName
+                                    ])) {
+
+                                        $fileNewName = $this->oApiFilesManager->getNonExistentFileName(
+                                            $sUUID,
+                                            $aArgs['ToType'],
+                                            $aArgs['ToPath'],
+                                            $aItem['Name']
+                                        );
+
+                                        $b2FileName = self::b2Filename($sUUID, $aArgs['ToPath'], $fileNewName);
+
+                                        /* @var $b2File File */
+                                        $b2File = $this->b2->upload([
+                                            'FileName' => $b2FileName,
+                                            'BucketName' => $this->b2BucketName,
+                                            'Body' => fopen($tempFileName, 'r')
+                                        ]);
+                                        unset($tempFileName);
+
+
+                                        $metadata = json_encode([
+                                            'id' => $b2File->getId(),
+                                            'size' => $b2File->getSize()
+                                        ]);
+
+                                        $mResult = $this->oApiFilesManager->createFile(
+                                            $sUUID,
+                                            $aItem['FromType'],
+                                            $aArgs['ToPath'],
+                                            $fileNewName,
+                                            $metadata
+                                        );
+                                    }
+                                }
+                            }
+                        } catch (\Exception $e) {
+                            throw new \Exception('Cloud storage error');
+                        }
+
+                    }
+                }
+            }
+            return true;
+        }
+    }
 
 	/**
 	 * @api {post} ?/Api/ Move
