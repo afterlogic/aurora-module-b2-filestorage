@@ -49,7 +49,7 @@ class Module extends \Aurora\System\Module\AbstractModule
 	public function init() 
 	{
 		ini_set( 'default_charset', 'UTF-8' ); //support for cyrillic characters in file names
-		$this->oApiFilesManager = new \Aurora\Modules\Files\Manager($this);
+		$this->oApiFilesManager = new \Aurora\Modules\PersonalFiles\Manager($this);
 		$this->b2BucketName = $this->getConfig('B2BucketName');
 		$this->b2 = new Client($this->getConfig('B2AccountId'), $this->getConfig('B2AppKey'));
 		
