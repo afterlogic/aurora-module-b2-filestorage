@@ -11,7 +11,9 @@
 namespace Aurora\Modules\B2Filestorage;
 
 use Aurora\Modules\Files\Classes\FileItem;
+use Aurora\System\Enums\LogLevel;
 use ChrisWhite\B2\Client;
+use ChrisWhite\B2\Exceptions\NotFoundException;
 use ChrisWhite\B2\File;
 
 /**
@@ -36,11 +38,26 @@ class Module extends \Aurora\System\Module\AbstractModule
     /**
      * @var Client
      */
-	protected $b2 = null;
+	protected $b2Client = null;
 
-	protected $b2BucketName = '';
+	protected $b2BucketId = '';
 
 	/***** private functions *****/
+
+    /**
+     * Always must be used instead of direct property access
+     *
+     * @return Client
+     */
+	public function getB2Client()
+    {
+	    if (empty($this->b2Client)) {
+	        $this->b2BucketId = $this->getConfig('B2BucketId');
+            $this->b2Client = new Client($this->getConfig('B2AccountId'), $this->getConfig('B2AppKey'));
+        }
+        return $this->b2Client;
+    }
+
 	/**
 	 * Initializes Files Module.
 	 * 
@@ -50,8 +67,7 @@ class Module extends \Aurora\System\Module\AbstractModule
 	{
 		ini_set( 'default_charset', 'UTF-8' ); //support for cyrillic characters in file names
 		$this->oApiFilesManager = new \Aurora\Modules\PersonalFiles\Manager($this);
-		$this->b2BucketName = $this->getConfig('B2BucketName');
-		$this->b2 = new Client($this->getConfig('B2AccountId'), $this->getConfig('B2AppKey'));
+
 		
 		$this->subscribeEvent('Files::GetFile', array($this, 'onGetFile'));
 		$this->subscribeEvent('Files::CreateFile', array($this, 'onCreateFile'));
@@ -132,7 +148,7 @@ class Module extends \Aurora\System\Module\AbstractModule
 
                     if (!empty($metadata['id'])) {
                         //Download original file content to temp file
-                        $this->b2->download([
+                        $this->getB2Client()->download([
                             'FileId' => $metadata['id'],
                             'SaveAs' => $tempFileName
                         ]);
@@ -142,6 +158,7 @@ class Module extends \Aurora\System\Module\AbstractModule
                     $Result = fopen($tempFileName, 'r');
                 }
             } catch (\Exception $e) {
+                \Aurora\System\Api::Log($e->getMessage(), LogLevel::Error, 'b2');
                 throw new \Exception('Cloud storage error');
             }
 
@@ -172,18 +189,20 @@ class Module extends \Aurora\System\Module\AbstractModule
                 $b2FileName = self::b2Filename($userUUID, $aArgs['Path'], $aArgs['Name']);
 
                 /* @var $b2File File */
-                $b2File = $this->b2->upload([
+                $b2File = $this->getB2Client()->upload([
                     'FileName' => $b2FileName,
-                    'BucketName' => $this->b2BucketName,
+                    'BucketId' => $this->b2BucketId,
                     'Body' => $aArgs['Data']
                 ]);
 
 
                 $metadata = json_encode([
                     'id' => $b2File->getId(),
+                    'name' => $b2FileName,
                     'size' => $b2File->getSize()
                 ]);
             } catch (\Exception $e) {
+                \Aurora\System\Api::Log($e->getMessage(), LogLevel::Error, 'b2');
                 throw new \Exception('Cloud storage error');
             }
 
@@ -208,7 +227,7 @@ class Module extends \Aurora\System\Module\AbstractModule
     {
         $b2FileName =  $userUUID  . DIRECTORY_SEPARATOR . md5($path . DIRECTORY_SEPARATOR . $name);
 
-        return urlencode($b2FileName);
+        return $b2FileName;
     }
 
 
@@ -768,15 +787,19 @@ class Module extends \Aurora\System\Module\AbstractModule
                                 /* @var $file \SplFileInfo */
                                 $metadata = json_decode(file_get_contents($file->getRealPath()), JSON_OBJECT_AS_ARRAY);
 
-                                if (!empty($metadata['id'])) {
+                                if (!empty($metadata['id']) && !empty($metadata['name'])) {
 
-                                    $this->b2->deleteFile([
-                                        'BucketName' => $this->b2BucketName,
-                                        'FileId' => $metadata['id']
+                                    $this->getB2Client()->deleteFile([
+                                        'BucketId' => $this->b2BucketId,
+                                        'FileId' => $metadata['id'],
+                                        'FileName' => $metadata['name']
                                     ]);
                                 }
                             }
+                        } catch (NotFoundException $nfe) {
+                            \Aurora\System\Api::Log($nfe->getMessage(), LogLevel::Error, 'b2');
                         } catch (\Exception $e) {
+                            \Aurora\System\Api::Log($e->getMessage(), LogLevel::Error, 'b2');
                             throw new \Exception('Cloud storage error');
                         }
 
@@ -785,19 +808,22 @@ class Module extends \Aurora\System\Module\AbstractModule
                         $metaFile = $this->oApiFilesManager->getFile($sUUID, $aArgs['Type'], $oItem['Path'], $oItem['Name']);
 
                         try {
-                            if (is_resource($metaFile))
-                            {
+                            if (is_resource($metaFile)) {
                                 //Parse metadata
                                 $metadata = json_decode(stream_get_contents($metaFile), JSON_OBJECT_AS_ARRAY);
 
-                                if (!empty($metadata['id'])) {
-                                    $this->b2->deleteFile([
-                                        'BucketName' => $this->b2BucketName,
-                                        'FileId' => $metadata['id']
+                                if (!empty($metadata['id']) && !empty($metadata['name'])) {
+                                    $this->getB2Client()->deleteFile([
+                                        'BucketId' => $this->b2BucketId,
+                                        'FileId' => $metadata['id'],
+                                        'FileName' => $metadata['name']
                                     ]);
                                 }
                             }
+                        } catch (NotFoundException $nfe) {
+                            \Aurora\System\Api::Log($nfe->getMessage(), LogLevel::Error, 'b2');
                         } catch (\Exception $e) {
+                            \Aurora\System\Api::Log($e->getMessage(), LogLevel::Error, 'b2');
                             throw new \Exception('Cloud storage error');
                         }
                     }
@@ -969,7 +995,7 @@ class Module extends \Aurora\System\Module\AbstractModule
                                 if (!empty($metadata['id'])) {
 
                                     //Download original file content to temp file
-                                    if ($this->b2->download([
+                                    if ($this->getB2Client()->download([
                                         'FileId' => $metadata['id'],
                                         'SaveAs' => $tempFileName
                                     ])) {
@@ -984,9 +1010,9 @@ class Module extends \Aurora\System\Module\AbstractModule
                                         $b2FileName = self::b2Filename($sUUID, $aArgs['ToPath'] . DIRECTORY_SEPARATOR . $aItem['Name'], $fileNewName);
 
                                         /* @var $b2File File */
-                                        $b2File = $this->b2->upload([
+                                        $b2File = $this->getB2Client()->upload([
                                             'FileName' => $b2FileName,
-                                            'BucketName' => $this->b2BucketName,
+                                            'BucketId' => $this->b2BucketId,
                                             'Body' => fopen($tempFileName, 'r')
                                         ]);
                                         unset($tempFileName);
@@ -994,6 +1020,7 @@ class Module extends \Aurora\System\Module\AbstractModule
 
                                         $metadata = json_encode([
                                             'id' => $b2File->getId(),
+                                            'name' => $b2FileName,
                                             'size' => $b2File->getSize()
                                         ]);
 
@@ -1002,6 +1029,7 @@ class Module extends \Aurora\System\Module\AbstractModule
                                 }
                             }
                         } catch (\Exception $e) {
+                            \Aurora\System\Api::Log($e->getMessage(), LogLevel::Error, 'b2');
                             throw new \Exception('Cloud storage error');
                         }
 
@@ -1021,7 +1049,7 @@ class Module extends \Aurora\System\Module\AbstractModule
                                 if (!empty($metadata['id'])) {
 
                                     //Download original file content to temp file
-                                    if ($this->b2->download([
+                                    if ($this->getB2Client()->download([
                                         'FileId' => $metadata['id'],
                                         'SaveAs' => $tempFileName
                                     ])) {
@@ -1036,9 +1064,9 @@ class Module extends \Aurora\System\Module\AbstractModule
                                         $b2FileName = self::b2Filename($sUUID, $aArgs['ToPath'], $fileNewName);
 
                                         /* @var $b2File File */
-                                        $b2File = $this->b2->upload([
+                                        $b2File = $this->getB2Client()->upload([
                                             'FileName' => $b2FileName,
-                                            'BucketName' => $this->b2BucketName,
+                                            'BucketId' => $this->b2BucketId,
                                             'Body' => fopen($tempFileName, 'r')
                                         ]);
                                         unset($tempFileName);
@@ -1046,6 +1074,7 @@ class Module extends \Aurora\System\Module\AbstractModule
 
                                         $metadata = json_encode([
                                             'id' => $b2File->getId(),
+                                            'name' => $b2FileName,
                                             'size' => $b2File->getSize()
                                         ]);
 
@@ -1060,6 +1089,7 @@ class Module extends \Aurora\System\Module\AbstractModule
                                 }
                             }
                         } catch (\Exception $e) {
+                            \Aurora\System\Api::Log($e->getMessage(), LogLevel::Error, 'b2');
                             throw new \Exception('Cloud storage error');
                         }
 
