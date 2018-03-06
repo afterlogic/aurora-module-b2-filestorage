@@ -131,11 +131,11 @@ class Module extends \Aurora\System\Module\AbstractModule
 	{
 		if ($this->checkStorageType($aArgs['Type']))
 		{
-			$sUUID = \Aurora\System\Api::getUserUUIDById($aArgs['UserId']);
+			$sUserPublicId = \Aurora\System\Api::getUserPublicIdById($aArgs['UserId']);
 			$iOffset = isset($aArgs['Offset']) ? $aArgs['Offset'] : 0;
 			$iChunkSizet = isset($aArgs['ChunkSize']) ? $aArgs['ChunkSize'] : 0;
 			//Read metadata from local FS
-			$metaFile = $this->oApiFilesManager->getFile($sUUID, $aArgs['Type'], $aArgs['Path'], $aArgs['Id'], $iOffset, $iChunkSizet);
+			$metaFile = $this->oApiFilesManager->getFile($sUserPublicId, $aArgs['Type'], $aArgs['Path'], $aArgs['Id'], $iOffset, $iChunkSizet);
 
 			try {
                 if (is_resource($metaFile))
@@ -183,10 +183,10 @@ class Module extends \Aurora\System\Module\AbstractModule
 		if ($this->checkStorageType($aArgs['Type']))
 		{
 
-		    $userUUID = \Aurora\System\Api::getUserUUIDById(isset($aArgs['UserId']) ? $aArgs['UserId'] : null);
+		    $sUserPublicId = \Aurora\System\Api::getUserPublicIdById(isset($aArgs['UserId']) ? $aArgs['UserId'] : null);
 
 		    try {
-                $b2FileName = self::b2Filename($userUUID, $aArgs['Path'], $aArgs['Name']);
+                $b2FileName = self::b2Filename($sUserPublicId, $aArgs['Path'], $aArgs['Name']);
 
                 /* @var $b2File File */
                 $b2File = $this->getB2Client()->upload([
@@ -208,7 +208,7 @@ class Module extends \Aurora\System\Module\AbstractModule
 
 
 			$Result = $this->oApiFilesManager->createFile(
-				$userUUID,
+				$sUserPublicId,
 				isset($aArgs['Type']) ? $aArgs['Type'] : null,
 				isset($aArgs['Path']) ? $aArgs['Path'] : null,
 				isset($aArgs['Name']) ? $aArgs['Name'] : null,
@@ -223,9 +223,9 @@ class Module extends \Aurora\System\Module\AbstractModule
 		}
 	}
 
-	public static function b2Filename($userUUID, $path, $name)
+	public static function b2Filename($sUserPublicId, $path, $name)
     {
-        $b2FileName =  $userUUID  . DIRECTORY_SEPARATOR . md5($path . DIRECTORY_SEPARATOR . $name);
+        $b2FileName =  $sUserPublicId  . DIRECTORY_SEPARATOR . md5($path . DIRECTORY_SEPARATOR . $name);
 
         return $b2FileName;
     }
@@ -369,17 +369,18 @@ class Module extends \Aurora\System\Module\AbstractModule
 	public function onAfterGetFiles($aArgs, &$mResult)
 	{
 		\Aurora\System\Api::checkUserRoleIsAtLeast(\Aurora\System\Enums\UserRole::NormalUser);
-		
+
 		if ($this->checkStorageType($aArgs['Type']))
 		{
-			$sUUID = \Aurora\System\Api::getUserUUIDById($aArgs['UserId']);
-			$aFiles = $this->oApiFilesManager->getFiles($sUUID, $aArgs['Type'], $aArgs['Path'], $aArgs['Pattern']);
+			$sUserPublicId = \Aurora\System\Api::getUserPublicIdById($aArgs['UserId']);
+
+			$aFiles = $this->oApiFilesManager->getFiles($sUserPublicId, $aArgs['Type'], $aArgs['Path'], $aArgs['Pattern']);
 
 			foreach($aFiles as &$fileInfo) {
                 /* @var $fileInfo FileItem */
                 if (!$fileInfo->IsFolder) {
                     //Read metadata from local FS
-                    $metaFile = $this->oApiFilesManager->getFile($sUUID, $aArgs['Type'], $aArgs['Path'], $fileInfo->Name);
+                    $metaFile = $this->oApiFilesManager->getFile($sUserPublicId, $aArgs['Type'], $aArgs['Path'], $fileInfo->Name);
 
                     if (is_resource($metaFile)) {
                         //Parse metadata
@@ -428,8 +429,8 @@ class Module extends \Aurora\System\Module\AbstractModule
 	{
 		if ($this->checkStorageType($aArgs['Type']))
 		{
-			$sUUID = \Aurora\System\Api::getUserUUIDById($aArgs['UserId']);
-			$mResult = $this->oApiFilesManager->getFileInfo($sUUID, $aArgs['Type'], $aArgs['Path'], $aArgs['Id']);
+			$sUserPublicId = \Aurora\System\Api::getUserPublicIdById($aArgs['UserId']);
+			$mResult = $this->oApiFilesManager->getFileInfo($sUserPublicId, $aArgs['Type'], $aArgs['Path'], $aArgs['Id']);
 			return true;
 		}
 	}
@@ -507,7 +508,7 @@ class Module extends \Aurora\System\Module\AbstractModule
 				$iUserId = $mMin['UserId'];
 				if ($iUserId)
 				{
-					$sUUID = \Aurora\System\Api::getUserUUIDById($iUserId);
+					$sUserPublicId = \Aurora\System\Api::getUserPublicIdById($iUserId);
 					$aItems = array();
 					$sMinPath = implode('/', array($mMin['Path'], $mMin['Name']));
 					$Path = $aArgs['Path'];
@@ -521,7 +522,7 @@ class Module extends \Aurora\System\Module\AbstractModule
 						$Path = str_replace('.', '', $Path);
 						try
 						{
-							$aItems = $this->oApiFilesManager->getFiles($sUUID, $mMin['Type'], $Path, '', $aArgs['Hash']);
+							$aItems = $this->oApiFilesManager->getFiles($sUserPublicId, $mMin['Type'], $Path, '', $aArgs['Hash']);
 						}
 						catch (\Exception $oEx)
 						{
@@ -588,10 +589,10 @@ class Module extends \Aurora\System\Module\AbstractModule
 	
 	public function onAfterCreateFolder(&$aArgs, &$mResult)
 	{
-		$sUUID = \Aurora\System\Api::getUserUUIDById($aArgs['UserId']);
+		$sUserPublicId = \Aurora\System\Api::getUserPublicIdById($aArgs['UserId']);
 		if ($this->checkStorageType($aArgs['Type']))
 		{
-			$mResult = $this->oApiFilesManager->createFolder($sUUID, $aArgs['Type'], $aArgs['Path'], $aArgs['FolderName']);
+			$mResult = $this->oApiFilesManager->createFolder($sUserPublicId, $aArgs['Type'], $aArgs['Path'], $aArgs['FolderName']);
 			return true;
 		}
 	}
@@ -678,11 +679,11 @@ class Module extends \Aurora\System\Module\AbstractModule
 			$Link = substr($Link, 11);
 		}
 		
-		$sUUID = \Aurora\System\Api::getUserUUIDById($UserId);
+		$sUserPublicId = \Aurora\System\Api::getUserPublicIdById($UserId);
 		if ($this->checkStorageType($Type))
 		{
 			$Name = \trim(\MailSo\Base\Utils::ClearFileName($Name));
-			$mResult = $this->oApiFilesManager->createLink($sUUID, $Type, $Path, $Link, $Name);
+			$mResult = $this->oApiFilesManager->createLink($sUserPublicId, $Type, $Path, $Link, $Name);
 		}
 	}
 
@@ -738,7 +739,7 @@ class Module extends \Aurora\System\Module\AbstractModule
 	
 	public function onAfterDelete(&$aArgs, &$mResult)
 	{
-		$sUUID = \Aurora\System\Api::getUserUUIDById($aArgs['UserId']);
+		$sUserPublicId = \Aurora\System\Api::getUserPublicIdById($aArgs['UserId']);
 		if ($this->checkStorageType($aArgs['Type']))
 		{
 			$mResult = false;
@@ -747,7 +748,7 @@ class Module extends \Aurora\System\Module\AbstractModule
 			{
 				if (!empty($oItem['Name']))
 				{
-					$mResult = $this->oApiFilesManager->delete($sUUID, $aArgs['Type'], $oItem['Path'], $oItem['Name']);
+					$mResult = $this->oApiFilesManager->delete($sUserPublicId, $aArgs['Type'], $oItem['Path'], $oItem['Name']);
 					if (!$mResult)
 					{
 						break;
@@ -767,7 +768,7 @@ class Module extends \Aurora\System\Module\AbstractModule
      */
     public function onBeforeDelete(&$aArgs, &$mResult)
     {
-        $sUUID = \Aurora\System\Api::getUserUUIDById($aArgs['UserId']);
+        $sUserPublicId = \Aurora\System\Api::getUserPublicIdById($aArgs['UserId']);
         if ($this->checkStorageType($aArgs['Type']))
         {
             $mResult = false;
@@ -777,10 +778,10 @@ class Module extends \Aurora\System\Module\AbstractModule
                 if (!empty($oItem['Name']))
                 {
                     /* @var $fileInfo FileItem */
-                    $fileInfo = $this->oApiFilesManager->getFileInfo($sUUID, $aArgs['Type'], $oItem['Path'], $oItem['Name']);
+                    $fileInfo = $this->oApiFilesManager->getFileInfo($sUserPublicId, $aArgs['Type'], $oItem['Path'], $oItem['Name']);
 
                     if ($fileInfo->IsFolder) {
-                        $directory = $this->oApiFilesManager->oStorage->getDirectory($sUUID, $aArgs['Type'], $fileInfo->FullPath);
+                        $directory = $this->oApiFilesManager->oStorage->getDirectory($sUserPublicId, $aArgs['Type'], $fileInfo->FullPath);
                         $files = $directory->getFileListRecursive();
                         try {
                             foreach($files as $file) {
@@ -805,7 +806,7 @@ class Module extends \Aurora\System\Module\AbstractModule
 
                     } else {
                         //Read metadata from local FS
-                        $metaFile = $this->oApiFilesManager->getFile($sUUID, $aArgs['Type'], $oItem['Path'], $oItem['Name']);
+                        $metaFile = $this->oApiFilesManager->getFile($sUserPublicId, $aArgs['Type'], $oItem['Path'], $oItem['Name']);
 
                         try {
                             if (is_resource($metaFile)) {
@@ -890,11 +891,11 @@ class Module extends \Aurora\System\Module\AbstractModule
 	{
 		if ($this->checkStorageType($aArgs['Type']))
 		{
-			$sUUID = \Aurora\System\Api::getUserUUIDById($aArgs['UserId']);
+			$sUserPublicId = \Aurora\System\Api::getUserPublicIdById($aArgs['UserId']);
 			$sNewName = \trim(\MailSo\Base\Utils::ClearFileName($aArgs['NewName']));
 
-			$sNewName = $this->oApiFilesManager->getNonExistentFileName($sUUID, $aArgs['Type'], $aArgs['Path'], $sNewName);
-			$mResult = $this->oApiFilesManager->rename($sUUID, $aArgs['Type'], $aArgs['Path'], $aArgs['Name'], $sNewName, $aArgs['IsLink']);
+			$sNewName = $this->oApiFilesManager->getNonExistentFileName($sUserPublicId, $aArgs['Type'], $aArgs['Path'], $sNewName);
+			$mResult = $this->oApiFilesManager->rename($sUserPublicId, $aArgs['Type'], $aArgs['Path'], $aArgs['Name'], $sNewName, $aArgs['IsLink']);
 			
 			return true;
 		}
@@ -955,7 +956,7 @@ class Module extends \Aurora\System\Module\AbstractModule
 	 */
     public function onAfterCopy(&$aArgs, &$mResult)
     {
-        $sUUID = \Aurora\System\Api::getUserUUIDById($aArgs['UserId']);
+        $sUserPublicId = \Aurora\System\Api::getUserPublicIdById($aArgs['UserId']);
 
         if ($this->checkStorageType($aArgs['FromType']))
         {
@@ -968,14 +969,14 @@ class Module extends \Aurora\System\Module\AbstractModule
                     if ($aItem['IsFolder']) {
                         //Copy meta files on local FS
                         $mResult = $this->oApiFilesManager->copy(
-                            $sUUID,
+                            $sUserPublicId,
                             $aItem['FromType'],
                             $aArgs['ToType'],
                             $aItem['FromPath'],
                             $aArgs['ToPath'],
                             $aItem['Name'],
                             $this->oApiFilesManager->getNonExistentFileName(
-                                $sUUID,
+                                $sUserPublicId,
                                 $aArgs['ToType'],
                                 $aArgs['ToPath'],
                                 $aItem['Name']
@@ -984,14 +985,14 @@ class Module extends \Aurora\System\Module\AbstractModule
 
                         try {
                             //Create duplicates at B2
-                            $directory = $this->oApiFilesManager->oStorage->getDirectory($sUUID, $aItem['FromType'], $aArgs['ToPath'] . DIRECTORY_SEPARATOR . $aItem['Name']);
+                            $directory = $this->oApiFilesManager->oStorage->getDirectory($sUserPublicId, $aItem['FromType'], $aArgs['ToPath'] . DIRECTORY_SEPARATOR . $aItem['Name']);
                             $copiedFiles = $directory->getFileListRecursive();
 
                             foreach ($copiedFiles as $copiedFile) {
                                 /* @var $copiedFile \SplFileInfo */
                                 $metadata = json_decode(file_get_contents($copiedFile->getRealPath()), JSON_OBJECT_AS_ARRAY);
 
-                                $tempFileName = tempnam('/tmp', uniqid('copy_') . md5($sUUID . $copiedFile->getFilename()));
+                                $tempFileName = tempnam('/tmp', uniqid('copy_') . md5($sUserPublicId . $copiedFile->getFilename()));
                                 if (!empty($metadata['id'])) {
 
                                     //Download original file content to temp file
@@ -1001,13 +1002,13 @@ class Module extends \Aurora\System\Module\AbstractModule
                                     ])) {
 
                                         $fileNewName = $this->oApiFilesManager->getNonExistentFileName(
-                                            $sUUID,
+                                            $sUserPublicId,
                                             $aArgs['ToType'],
                                             $aArgs['ToPath'],
                                             $copiedFile->getFilename()
                                         );
 
-                                        $b2FileName = self::b2Filename($sUUID, $aArgs['ToPath'] . DIRECTORY_SEPARATOR . $aItem['Name'], $fileNewName);
+                                        $b2FileName = self::b2Filename($sUserPublicId, $aArgs['ToPath'] . DIRECTORY_SEPARATOR . $aItem['Name'], $fileNewName);
 
                                         /* @var $b2File File */
                                         $b2File = $this->getB2Client()->upload([
@@ -1035,7 +1036,7 @@ class Module extends \Aurora\System\Module\AbstractModule
 
                     } else {
                         //Read metadata from local FS
-                        $metaFile = $this->oApiFilesManager->getFile($sUUID, $aArgs['FromType'], $aItem['FromPath'], $aItem['Name']);
+                        $metaFile = $this->oApiFilesManager->getFile($sUserPublicId, $aArgs['FromType'], $aItem['FromPath'], $aItem['Name']);
 
                         try {
                             if (is_resource($metaFile))
@@ -1044,7 +1045,7 @@ class Module extends \Aurora\System\Module\AbstractModule
                                 $metadata = json_decode(stream_get_contents($metaFile), JSON_OBJECT_AS_ARRAY);
 
                                 //Prepare temporary file on local FS
-                                $tempFileName = tempnam('/tmp', 'copy_' . md5($sUUID . $aItem['FromPath'] . $aItem['Name']));
+                                $tempFileName = tempnam('/tmp', 'copy_' . md5($sUserPublicId . $aItem['FromPath'] . $aItem['Name']));
 
                                 if (!empty($metadata['id'])) {
 
@@ -1055,13 +1056,13 @@ class Module extends \Aurora\System\Module\AbstractModule
                                     ])) {
 
                                         $fileNewName = $this->oApiFilesManager->getNonExistentFileName(
-                                            $sUUID,
+                                            $sUserPublicId,
                                             $aArgs['ToType'],
                                             $aArgs['ToPath'],
                                             $aItem['Name']
                                         );
 
-                                        $b2FileName = self::b2Filename($sUUID, $aArgs['ToPath'], $fileNewName);
+                                        $b2FileName = self::b2Filename($sUserPublicId, $aArgs['ToPath'], $fileNewName);
 
                                         /* @var $b2File File */
                                         $b2File = $this->getB2Client()->upload([
@@ -1079,7 +1080,7 @@ class Module extends \Aurora\System\Module\AbstractModule
                                         ]);
 
                                         $mResult = $this->oApiFilesManager->createFile(
-                                            $sUUID,
+                                            $sUserPublicId,
                                             $aItem['FromType'],
                                             $aArgs['ToPath'],
                                             $fileNewName,
@@ -1158,21 +1159,21 @@ class Module extends \Aurora\System\Module\AbstractModule
 	{
 		if ($this->checkStorageType($aArgs['FromType']))
 		{
-			$sUUID = \Aurora\System\Api::getUserUUIDById($aArgs['UserId']);
+			$sUserPublicId = \Aurora\System\Api::getUserPublicIdById($aArgs['UserId']);
 			foreach ($aArgs['Files'] as $aItem)
 			{
 				$bFolderIntoItself = $aItem['IsFolder'] && $aArgs['ToPath'] === $aItem['FromPath'].'/'.$aItem['Name'];
 				if (!$bFolderIntoItself)
 				{
 					$mResult = $this->oApiFilesManager->move(
-						$sUUID, 
+						$sUserPublicId,
 						$aItem['FromType'], 
 						$aArgs['ToType'], 
 						$aItem['FromPath'], 
 						$aArgs['ToPath'], 
 						$aItem['Name'], 
 						$this->oApiFilesManager->getNonExistentFileName(
-							$sUUID, 
+							$sUserPublicId,
 							$aArgs['ToType'], 
 							$aArgs['ToPath'], 
 							$aItem['Name']
@@ -1191,9 +1192,9 @@ class Module extends \Aurora\System\Module\AbstractModule
 		
 		if ($this->checkStorageType($aArgs['Type']))
 		{
-			$sUUID = \Aurora\System\Api::getUserUUIDById($aArgs['UserId']);
+			$sUserPublicId = \Aurora\System\Api::getUserPublicIdById($aArgs['UserId']);
 			$mResult = array(
-				'Used' => $this->oApiFilesManager->getUserSpaceUsed($sUUID, [\Aurora\System\Enums\FileStorageType::Personal]),
+				'Used' => $this->oApiFilesManager->getUserSpaceUsed($sUserPublicId, [\Aurora\System\Enums\FileStorageType::Personal]),
 				'Limit' => $this->getConfig('UserSpaceLimitMb', 0) * 1024 * 1024
 			);
 		}
@@ -1273,9 +1274,9 @@ class Module extends \Aurora\System\Module\AbstractModule
 		$IsFolder = $aArgs['IsFolder'];
 		
 		\Aurora\System\Api::checkUserRoleIsAtLeast(\Aurora\System\Enums\UserRole::NormalUser);
-		$sUUID = \Aurora\System\Api::getUserUUIDById($UserId);
+		$sUserPublicId = \Aurora\System\Api::getUserPublicIdById($UserId);
 		$bFolder = (bool)$IsFolder;
-		$mResult = $this->oApiFilesManager->createPublicLink($sUUID, $Type, $Path, $Name, $Size, $bFolder);
+		$mResult = $this->oApiFilesManager->createPublicLink($sUserPublicId, $Type, $Path, $Name, $Size, $bFolder);
 	}	
 	
 	/**
@@ -1347,9 +1348,9 @@ class Module extends \Aurora\System\Module\AbstractModule
 
 		\Aurora\System\Api::checkUserRoleIsAtLeast(\Aurora\System\Enums\UserRole::NormalUser);
 		
-		$sUUID = \Aurora\System\Api::getUserUUIDById($UserId);
+		$sUserPublicId = \Aurora\System\Api::getUserPublicIdById($UserId);
 		
-		$mResult = $this->oApiFilesManager->deletePublicLink($sUUID, $Type, $Path, $Name);
+		$mResult = $this->oApiFilesManager->deletePublicLink($sUserPublicId, $Type, $Path, $Name);
 	}
 
 	/***** public functions might be called with web API *****/
