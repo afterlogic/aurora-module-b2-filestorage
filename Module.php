@@ -88,7 +88,7 @@ class Module extends \Aurora\System\Module\AbstractModule
 		$this->subscribeEvent('Files::CreateLink::after', array($this, 'onAfterCreateLink'));
 		$this->subscribeEvent('Files::CreatePublicLink::after', array($this, 'onAfterCreatePublicLink'));
 		$this->subscribeEvent('Files::GetFileContent::after', array($this, 'onAfterGetFileContent'));
-
+        $this->subscribeEvent('Files::IsFileExists::after', array($this, 'onAfterIsFileExists'));
 		$this->subscribeEvent('Files::PopulateFileItem', array($this, 'onPopulateFileItem'));
 
 		$this->subscribeEvent('Core::AfterDeleteUser', array($this, 'onAfterDeleteUser'));
@@ -1352,6 +1352,20 @@ class Module extends \Aurora\System\Module\AbstractModule
 		
 		$mResult = $this->oApiFilesManager->deletePublicLink($sUserPublicId, $Type, $Path, $Name);
 	}
+
+    public function onAfterIsFileExists($aArgs, &$mResult)
+    {
+        if (isset($aArgs['Type']) && $this->checkStorageType($aArgs['Type']))
+        {
+            $UserId = $aArgs['UserId'];
+            $Type = $aArgs['Type'];
+            $Path = $aArgs['Path'];
+            $Name = $aArgs['Name'];
+
+            $sUUID = \Aurora\System\Api::getUserPublicIdById($UserId);
+            $mResult = $this->oApiFilesManager->isFileExists($sUUID, $Type, $Path, $Name);
+        }
+    }
 
 	/***** public functions might be called with web API *****/
 }
