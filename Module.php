@@ -146,7 +146,7 @@ class Module extends \Aurora\System\Module\AbstractModule
                     $metadata = json_decode(stream_get_contents($metaFile), JSON_OBJECT_AS_ARRAY);
 
                     //Prepare temporary file on local FS
-                    $tempFileName = '/tmp/' . $aArgs['Id'];
+                    $tempFileName = sys_get_temp_dir(). '/' . $aArgs['Id'];
 
                     if (!empty($metadata['id'])) {
                         //Download original file content to temp file
@@ -1192,7 +1192,7 @@ class Module extends \Aurora\System\Module\AbstractModule
     {
         \Aurora\System\Api::checkUserRoleIsAtLeast(\Aurora\System\Enums\UserRole::NormalUser);
 
-        if ($this->checkStorageType($aArgs['Type']))
+        if (isset($aArgs['Type']) && $this->checkStorageType($aArgs['Type']))
         {
             $sUserPublicId = \Aurora\System\Api::getUserPublicIdById($aArgs['UserId']);
             $mResult = array(
