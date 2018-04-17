@@ -77,6 +77,8 @@ class Module extends \Aurora\System\Module\AbstractModule
         $this->subscribeEvent('Files::GetStorages::after', array($this, 'onAfterGetStorages'));
         $this->subscribeEvent('Files::GetFileInfo::after', array($this, 'onAfterGetFileInfo'), 10);
         $this->subscribeEvent('Files::GetFiles::after', array($this, 'onAfterGetFiles'));
+        $this->subscribeEvent('Files::GetFilesForUpload::after', [$this, 'onAfterGetFilesForUpload']);
+
         $this->subscribeEvent('Files::CreateFolder::after', array($this, 'onAfterCreateFolder'));
         $this->subscribeEvent('Files::Copy::after', array($this, 'onAfterCopy'));
         $this->subscribeEvent('Files::Move::after', array($this, 'onAfterMove'));
@@ -402,6 +404,32 @@ class Module extends \Aurora\System\Module\AbstractModule
                 'Quota' => \Aurora\System\Api::GetModuleDecorator('Files')->GetQuota($aArgs['UserId'])
             );
             return true;
+        }
+    }
+
+    /**
+     * Return real file size
+     *
+     * @param $aArgs
+     * @param $mResult
+     */
+    public function onAfterGetFilesForUpload($aArgs, &$mResult)
+    {
+        $aHashes = isset($aArgs['Hashes']) ? $aArgs['Hashes'] : [];
+
+        foreach ($aHashes as $key => $sHash) {
+            $aValues = \Aurora\System\Api::DecodeKeyValues($sHash);
+            $iUserId = isset($aValues['UserId']) ? (int)$aValues['UserId'] : 0;
+            $sType = isset($aValues['Type']) ? $aValues['Type'] : '';
+            $sPath = isset($aValues['Path']) ? $aValues['Path'] : '';
+            $sFileName = isset($aValues['Name']) ? $aValues['Name'] : '';
+
+            $sUserPublicId = \Aurora\System\Api::getUserPublicIdById($iUserId);
+            $metaFile = $this->oApiFilesManager->getFile($sUserPublicId, $sType, $sPath, $sFileName);
+            if (is_resource($metaFile)) {
+                $aMetadata = json_decode(stream_get_contents($metaFile), JSON_OBJECT_AS_ARRAY);
+                $mResult[$key]['Size'] = $aMetadata['size'];
+            }
         }
     }
 
