@@ -12,6 +12,7 @@ namespace Aurora\Modules\B2Filestorage;
 
 use Aurora\Modules\Files\Classes\FileItem;
 use Aurora\System\Enums\LogLevel;
+use Aurora\System\Managers\Filecache;
 use ChrisWhite\B2\Client;
 use ChrisWhite\B2\Exceptions\NotFoundException;
 use ChrisWhite\B2\File;
@@ -108,6 +109,68 @@ class Module extends \Aurora\System\Module\AbstractModule
         return \Aurora\System\Api::GetModuleDecorator('Min');
     }
 
+    private static function storeThumbnail($sUUID, $rResource, $sFileName)
+    {
+        $sMd5Hash = \md5($sUUID . $sFileName);
+        $oApiFileCache = new Filecache();
+
+        $oApiFileCache->putFile($sUUID, 'Raw/Thumbnail/'.$sMd5Hash, $rResource, '_'.$sFileName, 'System');
+        if ($oApiFileCache->isFileExists($sUUID, 'Raw/Thumbnail/'.$sMd5Hash, '_'.$sFileName, 'System'))
+        {
+            $sFullFilePath = $oApiFileCache->generateFullFilePath($sUUID, 'Raw/Thumbnail/'.$sMd5Hash, '_'.$sFileName, 'System');
+            $iRotateAngle = 0;
+            if (\function_exists('exif_read_data'))
+            {
+                if ($exif_data = @\exif_read_data($sFullFilePath, 'IFD0'))
+                {
+                    switch (@$exif_data['Orientation'])
+                    {
+                        case 1:
+                            $iRotateAngle = 0;
+                            break;
+                        case 3:
+                            $iRotateAngle = 180;
+                            break;
+                        case 6:
+                            $iRotateAngle = 270;
+                            break;
+                        case 8:
+                            $iRotateAngle = 90;
+                            break;
+                    }
+                }
+            }
+
+            try
+            {
+                $oThumb = new \PHPThumb\GD(
+                    $sFullFilePath
+                );
+                if ($iRotateAngle > 0)
+                {
+                    $oThumb->rotateImageNDegrees($iRotateAngle);
+                }
+
+                $oThumb->adaptiveResize(120, 100)->save($sFullFilePath);
+
+                return $sFullFilePath;
+            }
+            catch (\Exception $oE) {}
+        }
+    }
+
+    private static function getThumbnail($sUUID, $sFileName)
+    {
+        $sMd5Hash = \md5($sUUID . $sFileName);
+        $oApiFileCache = new Filecache();
+
+        if ($oApiFileCache->isFileExists($sUUID, 'Raw/Thumbnail/'.$sMd5Hash, '_'.$sFileName, 'System'))
+        {
+            $sFullFilePath = $oApiFileCache->generateFullFilePath($sUUID, 'Raw/Thumbnail/'.$sMd5Hash, '_'.$sFileName, 'System');
+            return $sFullFilePath;
+        }
+    }
+
     /**
      * Checks if storage type is personal or corporate.
      *
@@ -151,15 +214,43 @@ class Module extends \Aurora\System\Module\AbstractModule
                     $tempFileName = sys_get_temp_dir(). '/' . $aArgs['Id'];
 
                     if (!empty($metadata['id'])) {
-                        //Download original file content to temp file
-                        $this->getB2Client()->download([
-                            'FileId' => $metadata['id'],
-                            'SaveAs' => $tempFileName
-                        ]);
+
+                        if ($aArgs['IsThumb']) {
+                            $sUUID = \Aurora\System\Api::getUserUUIDById($aArgs['UserId']);
+                            $thumbFileName = self::getThumbnail($sUUID, $aArgs['Name']);
+
+                            if (empty($thumbFileName)) {
+                                //Download original file content to temp file
+                                $this->getB2Client()->download([
+                                    'FileId' => $metadata['id'],
+                                    'SaveAs' => $tempFileName
+                                ]);
+
+                                //Create thumb
+                                self::storeThumbnail($sUUID, fopen($tempFileName, 'rw'), $aArgs['Name']);
+
+                                //Return file
+                                $Result = fopen($tempFileName, 'r');
+                            } elseif(is_file($thumbFileName) && is_readable($thumbFileName)) {
+                                $Result = fopen($thumbFileName, 'r');
+                            } else {
+                                //throw new \Exception('Failed to read thumb file');
+                            }
+
+                        } else {
+                            //Download original file content to temp file
+                            $this->getB2Client()->download([
+                                'FileId' => $metadata['id'],
+                                'SaveAs' => $tempFileName
+                            ]);
+
+                            //Return file
+                            $Result = fopen($tempFileName, 'r');
+                        }
+
+
                     }
 
-                    //Return file
-                    $Result = fopen($tempFileName, 'r');
                 }
             } catch (\Exception $e) {
                 \Aurora\System\Api::Log($e->getMessage(), LogLevel::Error, 'b2');
