@@ -109,15 +109,15 @@ class Module extends \Aurora\System\Module\AbstractModule
         return \Aurora\System\Api::GetModuleDecorator('Min');
     }
 
-    private static function storeThumbnail($sUUID, $rResource, $sFileName)
+    private static function storeThumbnail($sUUID, $rResource, $b2FileId)
     {
-        $sMd5Hash = \md5($sUUID . $sFileName);
+        $sMd5Hash = \md5($sUUID . $b2FileId);
         $oApiFileCache = new Filecache();
 
-        $oApiFileCache->putFile($sUUID, 'Raw/Thumbnail/'.$sMd5Hash, $rResource, '_'.$sFileName, 'System');
-        if ($oApiFileCache->isFileExists($sUUID, 'Raw/Thumbnail/'.$sMd5Hash, '_'.$sFileName, 'System'))
+        $oApiFileCache->putFile($sUUID, 'Raw/Thumbnail/'.$sMd5Hash, $rResource, '_'.$b2FileId, 'System');
+        if ($oApiFileCache->isFileExists($sUUID, 'Raw/Thumbnail/'.$sMd5Hash, '_'.$b2FileId, 'System'))
         {
-            $sFullFilePath = $oApiFileCache->generateFullFilePath($sUUID, 'Raw/Thumbnail/'.$sMd5Hash, '_'.$sFileName, 'System');
+            $sFullFilePath = $oApiFileCache->generateFullFilePath($sUUID, 'Raw/Thumbnail/'.$sMd5Hash, '_'.$b2FileId, 'System');
             $iRotateAngle = 0;
             if (\function_exists('exif_read_data'))
             {
@@ -159,14 +159,14 @@ class Module extends \Aurora\System\Module\AbstractModule
         }
     }
 
-    private static function getThumbnail($sUUID, $sFileName)
+    private static function getThumbnail($sUUID, $b2FileId)
     {
-        $sMd5Hash = \md5($sUUID . $sFileName);
+        $sMd5Hash = \md5($sUUID . $b2FileId);
         $oApiFileCache = new Filecache();
 
-        if ($oApiFileCache->isFileExists($sUUID, 'Raw/Thumbnail/'.$sMd5Hash, '_'.$sFileName, 'System'))
+        if ($oApiFileCache->isFileExists($sUUID, 'Raw/Thumbnail/'.$sMd5Hash, '_'.$b2FileId, 'System'))
         {
-            $sFullFilePath = $oApiFileCache->generateFullFilePath($sUUID, 'Raw/Thumbnail/'.$sMd5Hash, '_'.$sFileName, 'System');
+            $sFullFilePath = $oApiFileCache->generateFullFilePath($sUUID, 'Raw/Thumbnail/'.$sMd5Hash, '_'.$b2FileId, 'System');
             return $sFullFilePath;
         }
     }
@@ -217,7 +217,7 @@ class Module extends \Aurora\System\Module\AbstractModule
 
                         if ($aArgs['IsThumb']) {
                             $sUUID = \Aurora\System\Api::getUserUUIDById($aArgs['UserId']);
-                            $thumbFileName = self::getThumbnail($sUUID, $aArgs['Name']);
+                            $thumbFileName = self::getThumbnail($sUUID, $metadata['id']);
 
                             if (empty($thumbFileName)) {
                                 //Download original file content to temp file
@@ -227,7 +227,7 @@ class Module extends \Aurora\System\Module\AbstractModule
                                 ]);
 
                                 //Create thumb
-                                self::storeThumbnail($sUUID, fopen($tempFileName, 'rw'), $aArgs['Name']);
+                                self::storeThumbnail($sUUID, fopen($tempFileName, 'rw'), $metadata['id']);
 
                                 //Return file
                                 $Result = fopen($tempFileName, 'r');
