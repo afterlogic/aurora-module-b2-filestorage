@@ -16,6 +16,8 @@ use Aurora\System\Managers\Filecache;
 use ChrisWhite\B2\Client;
 use ChrisWhite\B2\Exceptions\NotFoundException;
 use ChrisWhite\B2\File;
+use GuzzleHttp\Psr7\Response;
+use function GuzzleHttp\Psr7\stream_for;
 
 /**
  * @package Modules
@@ -204,14 +206,13 @@ class Module extends \Aurora\System\Module\AbstractModule
             //Read metadata from local FS
             $metaFile = $this->oApiFilesManager->getFile($sUserPublicId, $aArgs['Type'], $aArgs['Path'], $aArgs['Id'], $iOffset, $iChunkSizet);
 
+
             try {
                 if (is_resource($metaFile))
                 {
                     //Parse metadata
                     $metadata = json_decode(stream_get_contents($metaFile), JSON_OBJECT_AS_ARRAY);
 
-                    //Prepare temporary file on local FS
-                    $tempFileName = sys_get_temp_dir(). '/' . $aArgs['Id'];
 
                     if (!empty($metadata['id'])) {
 
@@ -221,16 +222,20 @@ class Module extends \Aurora\System\Module\AbstractModule
 
                             if (empty($thumbFileName)) {
                                 //Download original file content to temp file
-                                $this->getB2Client()->download([
-                                    'FileId' => $metadata['id'],
-                                    'SaveAs' => $tempFileName
+                                $response = $this->getB2Client()->download([
+                                    'FileId' => $metadata['id']
                                 ]);
 
+                                $originalFileStream = \fopen('php://memory','r+');
+                                \fwrite($originalFileStream, $response);
+                                \rewind($originalFileStream);
+
                                 //Create thumb
-                                self::storeThumbnail($sUUID, fopen($tempFileName, 'rw'), $metadata['id']);
+                                self::storeThumbnail($sUUID, $originalFileStream, $metadata['id']);
+                                \rewind($originalFileStream);
 
                                 //Return file
-                                $Result = fopen($tempFileName, 'r');
+                                $Result = $originalFileStream;
                             } elseif(is_file($thumbFileName) && is_readable($thumbFileName)) {
                                 $Result = fopen($thumbFileName, 'r');
                             } else {
@@ -239,13 +244,14 @@ class Module extends \Aurora\System\Module\AbstractModule
 
                         } else {
                             //Download original file content to temp file
-                            $this->getB2Client()->download([
-                                'FileId' => $metadata['id'],
-                                'SaveAs' => $tempFileName
+
+                            $response = $this->getB2Client()->download([
+                                'FileId' => $metadata['id']
                             ]);
 
-                            //Return file
-                            $Result = fopen($tempFileName, 'r');
+                            $Result = \fopen('php://memory','r+');
+                            \fwrite($Result, $response);
+                            \rewind($Result);
                         }
 
 
