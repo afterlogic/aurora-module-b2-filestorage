@@ -13,11 +13,8 @@ namespace Aurora\Modules\B2Filestorage;
 use Aurora\Modules\Files\Classes\FileItem;
 use Aurora\System\Enums\LogLevel;
 use Aurora\System\Managers\Filecache;
-use ChrisWhite\B2\Client;
 use ChrisWhite\B2\Exceptions\NotFoundException;
 use ChrisWhite\B2\File;
-use GuzzleHttp\Psr7\Response;
-use function GuzzleHttp\Psr7\stream_for;
 
 /**
  * @package Modules
