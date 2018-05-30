@@ -141,8 +141,6 @@ class Module extends \Aurora\System\Module\AbstractModule
             $iOffset = isset($aArgs['Offset']) ? $aArgs['Offset'] : 0;
             $iChunkSizet = isset($aArgs['ChunkSize']) ? $aArgs['ChunkSize'] : 0;
 
-
-            ###DEBUG_START
             //Do nothing if thumb is cached
             if ($aArgs['IsThumb']) {
                 $sHash = (string) \Aurora\System\Application::GetPathItemByIndex(1, '');
@@ -159,8 +157,6 @@ class Module extends \Aurora\System\Module\AbstractModule
                     return true;
                 }
             }
-
-            ###DEBUG_END
 
             //Read metadata from local FS
             $metaFile = $this->oApiFilesManager->getFile($sUserPublicId, $aArgs['Type'], $aArgs['Path'], $aArgs['Id'], $iOffset, $iChunkSizet);
