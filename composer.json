@@ -6,7 +6,7 @@
 		"afterlogic/aurora-framework": "~0.8",
 		"afterlogic/aurora-module-dav": "~0.8",
 		"afterlogic/aurora-module-files": "~0.8",
-		"afterlogic/dav": "^2.0",
+		"afterlogic/dav": "^2.0.5",
 		"cwhite92/b2-sdk-php": "^1.3"
 	},
 	"extra": {
