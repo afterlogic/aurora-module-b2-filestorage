@@ -108,67 +108,7 @@ class Module extends \Aurora\System\Module\AbstractModule
         return \Aurora\System\Api::GetModuleDecorator('Min');
     }
 
-    private static function storeThumbnail($sUUID, $rResource, $b2FileId)
-    {
-        $sMd5Hash = \md5($sUUID . $b2FileId);
-        $oApiFileCache = new Filecache();
 
-        $oApiFileCache->putFile($sUUID, 'Raw/Thumbnail/'.$sMd5Hash, $rResource, '_'.$b2FileId, 'System');
-        if ($oApiFileCache->isFileExists($sUUID, 'Raw/Thumbnail/'.$sMd5Hash, '_'.$b2FileId, 'System'))
-        {
-            $sFullFilePath = $oApiFileCache->generateFullFilePath($sUUID, 'Raw/Thumbnail/'.$sMd5Hash, '_'.$b2FileId, 'System');
-            $iRotateAngle = 0;
-            if (\function_exists('exif_read_data'))
-            {
-                if ($exif_data = @\exif_read_data($sFullFilePath, 'IFD0'))
-                {
-                    switch (@$exif_data['Orientation'])
-                    {
-                        case 1:
-                            $iRotateAngle = 0;
-                            break;
-                        case 3:
-                            $iRotateAngle = 180;
-                            break;
-                        case 6:
-                            $iRotateAngle = 270;
-                            break;
-                        case 8:
-                            $iRotateAngle = 90;
-                            break;
-                    }
-                }
-            }
-
-            try
-            {
-                $oThumb = new \PHPThumb\GD(
-                    $sFullFilePath
-                );
-                if ($iRotateAngle > 0)
-                {
-                    $oThumb->rotateImageNDegrees($iRotateAngle);
-                }
-
-                $oThumb->adaptiveResize(120, 100)->save($sFullFilePath);
-
-                return $sFullFilePath;
-            }
-            catch (\Exception $oE) {}
-        }
-    }
-
-    private static function getThumbnail($sUUID, $b2FileId)
-    {
-        $sMd5Hash = \md5($sUUID . $b2FileId);
-        $oApiFileCache = new Filecache();
-
-        if ($oApiFileCache->isFileExists($sUUID, 'Raw/Thumbnail/'.$sMd5Hash, '_'.$b2FileId, 'System'))
-        {
-            $sFullFilePath = $oApiFileCache->generateFullFilePath($sUUID, 'Raw/Thumbnail/'.$sMd5Hash, '_'.$b2FileId, 'System');
-            return $sFullFilePath;
-        }
-    }
 
     /**
      * Checks if storage type is personal or corporate.
@@ -200,6 +140,28 @@ class Module extends \Aurora\System\Module\AbstractModule
             $sUserPublicId = \Aurora\System\Api::getUserPublicIdById($aArgs['UserId']);
             $iOffset = isset($aArgs['Offset']) ? $aArgs['Offset'] : 0;
             $iChunkSizet = isset($aArgs['ChunkSize']) ? $aArgs['ChunkSize'] : 0;
+
+
+            ###DEBUG_START
+            //Do nothing if thumb is cached
+            if ($aArgs['IsThumb']) {
+                $sHash = (string) \Aurora\System\Application::GetPathItemByIndex(1, '');
+                if (empty($sHash))
+                {
+                    $sHash = \rand(1000, 9999);
+                }
+                $sMd5Hash = \md5($sHash);
+
+                $oApiFileCache = new Filecache();
+
+                if ($oApiFileCache->isFileExists($aArgs['UserId'], 'Raw/Thumb/'.$sMd5Hash, '_' . $aArgs['Id'], 'System')) {
+                    $Result = \fopen('php://memory','r+');
+                    return true;
+                }
+            }
+
+            ###DEBUG_END
+
             //Read metadata from local FS
             $metaFile = $this->oApiFilesManager->getFile($sUserPublicId, $aArgs['Type'], $aArgs['Path'], $aArgs['Id'], $iOffset, $iChunkSizet);
 
@@ -213,47 +175,15 @@ class Module extends \Aurora\System\Module\AbstractModule
 
                     if (!empty($metadata['id'])) {
 
-                        if ($aArgs['IsThumb']) {
-                            $sUUID = \Aurora\System\Api::getUserUUIDById($aArgs['UserId']);
-                            $thumbFileName = self::getThumbnail($sUUID, $metadata['id']);
+                        //Download original file content to temp file
+                        $response = $this->getB2Client()->download([
+                            'FileId' => $metadata['id']
+                        ]);
 
-                            if (empty($thumbFileName)) {
-                                //Download original file content to temp file
-                                $response = $this->getB2Client()->download([
-                                    'FileId' => $metadata['id']
-                                ]);
-
-                                $originalFileStream = \fopen('php://memory','r+');
-                                \fwrite($originalFileStream, $response);
-                                \rewind($originalFileStream);
-
-                                //Create thumb
-                                self::storeThumbnail($sUUID, $originalFileStream, $metadata['id']);
-                                \rewind($originalFileStream);
-
-                                //Return file
-                                $Result = $originalFileStream;
-                            } elseif(is_file($thumbFileName) && is_readable($thumbFileName)) {
-                                $Result = fopen($thumbFileName, 'r');
-                            } else {
-                                //throw new \Exception('Failed to read thumb file');
-                            }
-
-                        } else {
-                            //Download original file content to temp file
-
-                            $response = $this->getB2Client()->download([
-                                'FileId' => $metadata['id']
-                            ]);
-
-                            $Result = \fopen('php://memory','r+');
-                            \fwrite($Result, $response);
-                            \rewind($Result);
-                        }
-
-
+                        $Result = \fopen('php://memory','r+');
+                        \fwrite($Result, $response);
+                        \rewind($Result);
                     }
-
                 }
             } catch (\Exception $e) {
                 \Aurora\System\Api::Log($e->getMessage(), LogLevel::Error, 'b2');
@@ -893,6 +823,8 @@ class Module extends \Aurora\System\Module\AbstractModule
     public function onBeforeDelete(&$aArgs, &$mResult)
     {
         $sUserPublicId = \Aurora\System\Api::getUserPublicIdById($aArgs['UserId']);
+        $sUUID = \Aurora\System\Api::getUserUUIDById($aArgs['UserId']);
+
         if ($this->checkStorageType($aArgs['Type']))
         {
             $mResult = false;
@@ -954,7 +886,6 @@ class Module extends \Aurora\System\Module\AbstractModule
                     }
                 }
             }
-            return true;
         }
     }
 
