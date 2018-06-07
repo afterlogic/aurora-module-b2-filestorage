@@ -220,11 +220,11 @@ class Module extends \Aurora\System\Module\AbstractModule
                 ]);
 
 
-                $metadata = json_encode([
+                $metadata = [
                     'id' => $b2File->getId(),
                     'name' => $b2FileName,
                     'size' => $b2File->getSize()
-                ]);
+                ];
             } catch (\Exception $e) {
                 \Aurora\System\Api::Log($e->getMessage(), LogLevel::Error, 'b2');
                 throw new \Exception('Cloud storage error');
@@ -236,11 +236,13 @@ class Module extends \Aurora\System\Module\AbstractModule
                 isset($aArgs['Type']) ? $aArgs['Type'] : null,
                 isset($aArgs['Path']) ? $aArgs['Path'] : null,
                 isset($aArgs['Name']) ? $aArgs['Name'] : null,
-                $metadata,
+                json_encode($metadata),
                 isset($aArgs['Overwrite']) ? $aArgs['Overwrite'] : null,
                 isset($aArgs['RangeType']) ? $aArgs['RangeType'] : null,
                 isset($aArgs['Offset']) ? $aArgs['Offset'] : null,
-                isset($aArgs['ExtendedProps']) ? $aArgs['ExtendedProps'] : null
+                [
+                    'size' => $metadata['size']
+                ]
             );
 
             return true;
@@ -402,20 +404,8 @@ class Module extends \Aurora\System\Module\AbstractModule
 
             foreach($aFiles as &$fileInfo) {
                 /* @var $fileInfo FileItem */
-                if (!$fileInfo->IsFolder) {
-                    //Read metadata from local FS
-                    $metaFile = $this->oApiFilesManager->getFile($sUserPublicId, $aArgs['Type'], $aArgs['Path'], $fileInfo->Name);
-
-                    if (is_resource($metaFile)) {
-                        //Parse metadata
-                        $metadata = json_decode(stream_get_contents($metaFile), JSON_OBJECT_AS_ARRAY);
-
-                        if (!empty($metadata['size'])) {
-
-                            //Override file size
-                            $fileInfo->Size = $metadata['size'];
-                        }
-                    }
+                if ((!$fileInfo->IsFolder) && array_key_exists('size', $fileInfo->ExtendedProps)) {
+                    $fileInfo->Size = $fileInfo->ExtendedProps['size'];
                 }
             }
 
@@ -446,10 +436,11 @@ class Module extends \Aurora\System\Module\AbstractModule
 
             $sUserPublicId = \Aurora\System\Api::getUserPublicIdById($iUserId);
             $metaFile = $this->oApiFilesManager->getFile($sUserPublicId, $sType, $sPath, $sFileName);
-            if (is_resource($metaFile)) {
-                $aMetadata = json_decode(stream_get_contents($metaFile), JSON_OBJECT_AS_ARRAY);
-                $mResult[$key]['Size'] = $aMetadata['size'];
+
+            if (array_key_exists('size', $metaFile->ExtendedProps)) {
+                $mResult[$key]['Size'] = $metaFile->ExtendedProps['size'];
             }
+
         }
     }
 
@@ -1124,18 +1115,24 @@ class Module extends \Aurora\System\Module\AbstractModule
                                         unset($tempFileName);
 
 
-                                        $metadata = json_encode([
+                                        $metadata = [
                                             'id' => $b2File->getId(),
                                             'name' => $b2FileName,
                                             'size' => $b2File->getSize()
-                                        ]);
+                                        ];
 
                                         $mResult = $this->oApiFilesManager->createFile(
                                             $sUserPublicId,
                                             $aItem['FromType'],
                                             $aArgs['ToPath'],
                                             $fileNewName,
-                                            $metadata
+                                            json_encode($metadata),
+                                            true,
+                                            0,
+                                            0,
+                                            [
+                                                'size' => $metadata['size']
+                                            ]
                                         );
                                     }
                                 }
